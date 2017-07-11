@@ -1,21 +1,82 @@
+#
+# http://travis-ci.org configuration file for openMVG
+#
+
+dist: trusty
+sudo: false
+
 language: cpp
 
-compiler:
-  - gcc
+matrix:
+  include:
+    - os: linux
+      compiler: gcc
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - ubuntu-sdk-team/ppa
+          packages:
+            - g++-4.8
+            - qtbase5-dev
+            - libqt5svg5-dev
+            - libqt5opengl5-dev
+      env: COMPILER=g++-4.8
+    - os: linux
+      compiler: clang
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-precise-3.7
+          packages:
+            - clang-3.7
+      env: COMPILER=clang++-3.7
+    - os: osx
+      osx_image: xcode8.2
 
-install: sudo apt-get install cmake libpng-dev libjpeg8-dev libxxf86vm1 libxxf86vm1 libxxf86vm-dev x11proto-xf86vidmode-dev libxrandr-dev
+addons:
+  apt:
+    sources:
+      - ubuntu-toolchain-r-test
+    packages:
+      - cmake
+      - libpng-dev
+      - libjpeg8-dev
+      - libtiff4-dev
+      - libxxf86vm1
+      - libxxf86vm-dev
+      - x11proto-xf86vidmode-dev
+      - libxrandr-dev
+      - qtbase5-dev
+
+env:
+  global:
+    - OPENMVG_SOURCE=${TRAVIS_BUILD_DIR}/src
+    - OPENMVG_BUILD=${TRAVIS_BUILD_DIR}/build
 
 before_script:
-  - cd ..
-  - mkdir build
-  - cd build
-  - cmake -DCMAKE_BUILD_TYPE=release . ../openMVG/src
+  # Display cmake version
+  - cmake --version
+  # Create build folder
+  - rm -rf $OPENMVG_BUILD
+  - mkdir $OPENMVG_BUILD
+  - cd $OPENMVG_BUILD
+  # Classic release build
+  #  - Compile only OpenMVG core libraries for unit testing
+  #  - SCHUR_SPECIALIZATIONS set to OFF to speed up build time (ceres)
+  - >
+    cmake \
+      -DCMAKE_CXX_COMPILER=$COMPILER \
+      -DCMAKE_BUILD_TYPE=release \
+      -DOpenMVG_BUILD_TESTS=ON \
+      -DOpenMVG_BUILD_EXAMPLES=ON \
+      -DOpenMVG_BUILD_SOFTWARES=ON \
+      -DSCHUR_SPECIALIZATIONS=OFF \
+      . $OPENMVG_SOURCE
 
 script:
-  - make
+# limit GCC builds to a reduced number of thread for the virtual machine
+  - time make all -j 2
   - make test
-
-branches:
-  only:
-    - develop
 

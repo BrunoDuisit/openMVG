@@ -11,8 +11,8 @@ Basic idea is to provide to openMVG :
 - an easy matrices and vectors manipulation,
 - a collection of numeric solvers and related algorithms.
 
-Container 
-=============
+Vector, Matrix containers
+===========================
 
 OpenMVG redefines some Eigen basis type (points, vectors, matrices) for code consitency and clarity:
 
@@ -48,10 +48,8 @@ Linear algebra
 * SVD/QR/LU decomposition.
   
 To know more
-============
+--------------
 
 Please visit: http://eigen.tuxfamily.org/dox/group__QuickRefPage.html
 
-  
-.. [Eigen] http://eigen.tuxfamily.org/
 

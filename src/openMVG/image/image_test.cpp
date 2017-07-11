@@ -1,14 +1,22 @@
+// This file is part of OpenMVG, an Open Multiple View Geometry C++ library.
+
 // Copyright (c) 2012, 2013 Pierre MOULON.
 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#include "openMVG/image/image.hpp"
+#include "openMVG/image/image_container.hpp"
+#include "openMVG/image/image_converter.hpp"
+#include "openMVG/image/pixel_types.hpp"
+
 #include "testing/testing.h"
 
 #include <iostream>
+
 using namespace std;
+using namespace openMVG;
+using namespace openMVG::image;
 
 TEST(Image, Basis)
 {
@@ -50,6 +58,12 @@ TEST(Image, Basis)
   Image<RGBAColor> imaRGBA(10,10);
   imaRGBA(0,0) = RGBAColor(0,1,2,1);
   imaRGBA(1,0) = RGBAColor(1,1,1);
+
+  // Image resizing
+  Image<unsigned char> imaToResize;
+  imaToResize.resize(5,10);
+  EXPECT_EQ(10, imaToResize.Height());
+  EXPECT_EQ(5, imaToResize.Width());
 }
 
 TEST(Image, PixelTypes)
@@ -59,6 +73,19 @@ TEST(Image, PixelTypes)
   // The following issue must used : (at your own risk)
   RGBColor  b(static_cast<unsigned char>(0));
   RGBAColor d(BLACK);
+}
+
+TEST(Image, ImageConverter)
+{
+  Image<RGBColor> imaColorRGB(5,5);
+  imaColorRGB.fill(RGBColor(10,10,10));
+  Image<unsigned char> imaGray;
+  ConvertPixelType(imaColorRGB, &imaGray);
+
+  //RGBA
+  Image<RGBAColor> imaColorRGBA(5,5);
+  imaColorRGBA.fill(RGBAColor(10,10,10, 255));
+  ConvertPixelType(imaColorRGBA, &imaGray);
 }
 
 /* ************************************************************************* */

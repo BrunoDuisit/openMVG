@@ -1,52 +1,50 @@
+// This file is part of OpenMVG, an Open Multiple View Geometry C++ library.
 
-// Copyright (c) 2012, 2013 Pierre MOULON.
+// Copyright (c) 2012, 2013, 2015 Pierre MOULON.
 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#include "openMVG/matching/indMatch.hpp"
-#include "openMVG/matching/indMatch_utils.hpp"
-#include "openMVG/image/image.hpp"
-#include "openMVG/features/features.hpp"
+#include "openMVG/features/svg_features.hpp"
+#include "openMVG/image/image_io.hpp"
+#include "openMVG/sfm/pipelines/sfm_features_provider.hpp"
+#include "openMVG/sfm/sfm_data.hpp"
+#include "openMVG/sfm/sfm_data_io.hpp"
+#include "openMVG/sfm/sfm_view.hpp"
 
-#include "software/SfM/SfMIOHelper.hpp"
 #include "third_party/cmdLine/cmdLine.h"
+#include "third_party/progress/progress_display.hpp"
 #include "third_party/stlplus3/filesystemSimplified/file_system.hpp"
-#include "third_party/progress/progress.hpp"
-#include "third_party/vectorGraphics/svgDrawer.hpp"
 
 #include <cstdlib>
-#include <string>
-#include <vector>
 #include <fstream>
-#include <map>
+#include <memory>
+#include <string>
 
 using namespace openMVG;
-using namespace openMVG::matching;
-using namespace svg;
-
+using namespace openMVG::sfm;
 
 int main(int argc, char ** argv)
 {
   CmdLine cmd;
 
-  std::string sImaDirectory;
+  std::string sSfM_Data_Filename;
   std::string sMatchesDir;
   std::string sOutDir = "";
 
-  cmd.add( make_option('i', sImaDirectory, "imadir") );
+  cmd.add( make_option('i', sSfM_Data_Filename, "input_file") );
   cmd.add( make_option('d', sMatchesDir, "matchdir") );
   cmd.add( make_option('o', sOutDir, "outdir") );
 
   try {
       if (argc == 1) throw std::string("Invalid command line parameter.");
       cmd.process(argc, argv);
-  } catch(const std::string& s) {
-      std::cerr << "Export pairwise matches.\nUsage: " << argv[0] << ' '
-      << "[-i|--imadir path] "
-      << "[-d|--matchdir path] "
-      << "[-o|--outdir path] "
+  } catch (const std::string& s) {
+      std::cerr << "Export pairwise matches.\nUsage: " << argv[0] << "\n"
+      << "[-i|--input_file file] path to a SfM_Data scene\n"
+      << "[-d|--matchdir path]\n"
+      << "[-o|--outdir path]\n"
       << std::endl;
 
       std::cerr << s << std::endl;
@@ -60,16 +58,36 @@ int main(int argc, char ** argv)
 
 
   //---------------------------------------
-  // Read images names
+  // Read SfM Scene (image view names)
   //---------------------------------------
-
-  std::vector<std::string> vec_fileNames;  
-  if (!SfMIO::loadImageList( vec_fileNames,
-      stlplus::create_filespec(sMatchesDir, "lists", "txt"),false)) {
-    std::cerr << "\nEmpty input image list" << std::endl;
+  SfM_Data sfm_data;
+  if (!Load(sfm_data, sSfM_Data_Filename, ESfM_Data(VIEWS|INTRINSICS))) {
+    std::cerr << std::endl
+      << "The input SfM_Data file \""<< sSfM_Data_Filename << "\" cannot be read." << std::endl;
     return EXIT_FAILURE;
   }
 
+  //---------------------------------------
+  // Load SfM Scene regions
+  //---------------------------------------
+  // Init the regions_type from the image describer file (used for image regions extraction)
+  using namespace openMVG::features;
+  const std::string sImage_describer = stlplus::create_filespec(sMatchesDir, "image_describer", "json");
+  std::unique_ptr<Regions> regions_type = Init_region_type_from_file(sImage_describer);
+  if (!regions_type)
+  {
+    std::cerr << "Invalid: "
+      << sImage_describer << " regions type file." << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  // Read the features
+  std::shared_ptr<Features_Provider> feats_provider = std::make_shared<Features_Provider>();
+  if (!feats_provider->load(sfm_data, sMatchesDir, regions_type)) {
+    std::cerr << std::endl
+      << "Invalid features." << std::endl;
+    return EXIT_FAILURE;
+  }
 
   // ------------
   // For each image, export visually the keypoints
@@ -77,47 +95,27 @@ int main(int argc, char ** argv)
 
   stlplus::folder_create(sOutDir);
   std::cout << "\n Export extracted keypoints for all images" << std::endl;
-  C_Progress_display my_progress_bar( vec_fileNames.size() );
-  for (std::vector<std::string>::const_iterator iterFilename = vec_fileNames.begin();
-    iterFilename != vec_fileNames.end();
-    ++iterFilename, ++my_progress_bar)
+  C_Progress_display my_progress_bar( sfm_data.views.size() );
+  for (Views::const_iterator iterViews = sfm_data.views.begin();
+      iterViews != sfm_data.views.end();
+      ++iterViews, ++my_progress_bar)
   {
-    const size_t I = std::distance(
-      (std::vector<std::string>::const_iterator)vec_fileNames.begin(),
-      iterFilename);
+    const View * view = iterViews->second.get();
+    const std::string sView_filename = stlplus::create_filespec(sfm_data.s_root_path,
+      view->s_Img_path);
 
-    //--
-    //- Read the image size
-    Image<RGBColor> image;
-    ReadImage( stlplus::create_filespec(sImaDirectory,*iterFilename).c_str() , &image);
-    const std::pair<size_t, size_t> dimImage (image.Width(),image.Height());
-
-    svgDrawer svgStream( dimImage.first, dimImage.second);
-    svgStream.drawImage(stlplus::create_filespec(sImaDirectory,*iterFilename),
-      dimImage.first,
-      dimImage.second);
-
-    // Load the features from the feature file
-    std::vector<SIOPointFeature> vec_feat;
-    loadFeatsFromFile(
-      stlplus::create_filespec(sMatchesDir, stlplus::basename_part(*iterFilename), ".feat"),
-      vec_feat);
-
-    //-- Draw features
-    for (size_t i=0; i< vec_feat.size(); ++i)  {
-      const SIOPointFeature & feature = vec_feat[i];
-      svgStream.drawCircle(feature.x(), feature.y(), feature.scale(),
-          svgStyle().stroke("yellow", 2.0));
-    }
-
-    // Write the SVG file
     std::ostringstream os;
     os << stlplus::folder_append_separator(sOutDir)
-      << stlplus::basename_part(*iterFilename)
-      << "_" << vec_feat.size() << "_.svg";
-    ofstream svgFile( os.str().c_str() );
-    svgFile << svgStream.closeSvgFile().str();
-    svgFile.close();
+      << stlplus::basename_part(sView_filename)
+      << "_" << feats_provider->getFeatures(view->id_view).size() << "_.svg";
+
+    Features2SVG
+    (
+      sView_filename,
+      {view->ui_width, view->ui_height},
+      feats_provider->getFeatures(view->id_view),
+      os.str()
+    );
   }
   return EXIT_SUCCESS;
 }

@@ -1,6 +1,6 @@
 // Ceres Solver - A fast non-linear least squares minimizer
-// Copyright 2010, 2011, 2012 Google Inc. All rights reserved.
-// http://code.google.com/p/ceres-solver/
+// Copyright 2015 Google Inc. All rights reserved.
+// http://ceres-solver.org/
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -43,14 +43,14 @@ namespace internal {
 
 // If rho[1] is zero, the Corrector constructor should crash.
 TEST(Corrector, ZeroGradientDeathTest) {
-  const double kRho[] = {0.0, 0.0, 0.0};
+  const double kRho[] = {0.0, 0.0, 1.0};
   EXPECT_DEATH_IF_SUPPORTED({Corrector c(1.0, kRho);},
                ".*");
 }
 
 // If rho[1] is negative, the Corrector constructor should crash.
 TEST(Corrector, NegativeGradientDeathTest) {
-  const double kRho[] = {0.0, -0.1, 0.0};
+  const double kRho[] = {0.0, -0.1, 1.0};
   EXPECT_DEATH_IF_SUPPORTED({Corrector c(1.0, kRho);},
                ".*");
 }

@@ -19,6 +19,8 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 // IN THE SOFTWARE.
 
+// This file is part of OpenMVG, an Open Multiple View Geometry C++ library.
+
 // Copyright (c) 2012, 2013 Pierre MOULON.
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -27,15 +29,17 @@
 
 #include "openMVG/multiview/solver_essential_five_point.hpp"
 #include "openMVG/multiview/solver_fundamental_kernel.hpp"
+
 #include <iostream>
+
 namespace openMVG {
 
 Mat FivePointsNullspaceBasis(const Mat2X &x1, const Mat2X &x2) {
   Eigen::Matrix<double,9, 9> A;
   A.setZero();  // Make A square until Eigen supports rectangular SVD.
   fundamental::kernel::EncodeEpipolarEquation(x1, x2, &A);
-  Eigen::JacobiSVD<Eigen::Matrix<double,9, 9> > svd(A,Eigen::ComputeFullV);
-  return svd.matrixV().topRightCorner<9,4>();
+  Eigen::JacobiSVD<Eigen::Matrix<double, 9, 9> > svd(A, Eigen::ComputeFullV);
+  return svd.matrixV().topRightCorner<9, 4>();
 }
 
 Vec o1(const Vec &a, const Vec &b) {
@@ -147,14 +151,14 @@ Mat FivePointsPolynomialConstraints(const Mat &E_basis) {
 
   // Equation (21).
   Vec (&L)[3][3] = EET;
-  Vec trace  = 0.5 * (EET[0][0] + EET[1][1] + EET[2][2]);
-  for (int i = 0; i < 3; ++i) {
+  const Vec trace  = 0.5 * (EET[0][0] + EET[1][1] + EET[2][2]);
+  for (const int i : {0,1,2}) {
     L[i][i] -= trace;
   }
 
   // Equation (23).
-  for (int i = 0; i < 3; ++i) {
-    for (int j = 0; j < 3; ++j) {
+  for (const int i : {0,1,2}) {
+    for (const int j : {0,1,2}) {
       Vec LEij = o2(L[i][0], E[0][j])
                + o2(L[i][1], E[1][j])
                + o2(L[i][2], E[2][j]);
@@ -165,87 +169,48 @@ Mat FivePointsPolynomialConstraints(const Mat &E_basis) {
   return M;
 }
 
-void FivePointsGaussJordan(Mat *Mp) {
-  Mat &M = *Mp;
-
-  // Gauss Elimination.
-  for (int i = 0; i < 10; ++i) {
-    M.row(i) /= M(i,i);
-    for (int j = i + 1; j < 10; ++j) {
-      M.row(j) = M.row(j) / M(j,i) - M.row(i);
-    }
-  }
-  // Backsubstitution.
-  for (int i = 9; i >= 0; --i) {
-    for (int j = 0; j < i; ++j) {
-      M.row(j) = M.row(j) - M(j,i) * M.row(i);
-    }
-  }
-}
-
 void FivePointsRelativePose(const Mat2X &x1,
                             const Mat2X &x2,
-                            vector<Mat3> *Es) {
+                            std::vector<Mat3> *Es) {
   // Step 1: Nullspace Extraction.
-  Mat E_basis = FivePointsNullspaceBasis(x1, x2);
+  const Eigen::Matrix<double, 9, 4> E_basis = FivePointsNullspaceBasis(x1, x2);
 
   // Step 2: Constraint Expansion.
-  Mat M = FivePointsPolynomialConstraints(E_basis);
+  const Eigen::Matrix<double, 10, 20> E_constraints = FivePointsPolynomialConstraints(E_basis);
 
-  // Step 3: Gauss-Jordan Elimination.
-  FivePointsGaussJordan(&M);
+  // Step 3: Gauss-Jordan Elimination (done thanks to a LU decomposition).
+  using Mat10 = Eigen::Matrix<double, 10, 10>;
+  Eigen::FullPivLU<Mat10> c_lu(E_constraints.block<10, 10>(0, 0));
+  const Mat10 M = c_lu.solve(E_constraints.block<10, 10>(0, 10));
 
   // For next steps we follow the matlab code given in Stewenius et al [1].
 
   // Build action matrix.
-  Mat B = M.topRightCorner<10,10>();
-  Mat At = Mat::Zero(10,10);
-  At.row(0) = -B.row(0);
-  At.row(1) = -B.row(1);
-  At.row(2) = -B.row(2);
-  At.row(3) = -B.row(4);
-  At.row(4) = -B.row(5);
-  At.row(5) = -B.row(7);
-  At(6,0) = 1;
-  At(7,1) = 1;
-  At(8,3) = 1;
-  At(9,6) = 1;
 
-  // Compute solutions from action matrix's eigenvectors.
-  Eigen::EigenSolver<Mat> es(At);
-  typedef Eigen::EigenSolver<Mat>::EigenvectorsType Matc;
-  Matc V = es.eigenvectors();
-  Matc SOLS(4, 10);
-  SOLS.row(0) = V.row(6).array() / V.row(9).array();
-  SOLS.row(1) = V.row(7).array() / V.row(9).array();
-  SOLS.row(2) = V.row(8).array() / V.row(9).array();
-  SOLS.row(3).setOnes();
+  const Mat10 & B = M.topRightCorner<10,10>();
+  Mat10 At = Mat10::Zero(10,10);
+  At.block<3, 10>(0, 0) = B.block<3, 10>(0, 0);
+  At.row(3) = B.row(4);
+  At.row(4) = B.row(5);
+  At.row(5) = B.row(7);
+  At(6,0) = At(7,1) = At(8,3) = At(9,6) = -1;
 
-  // Get the ten candidate E matrices in vector form.
-  Matc Evec = E_basis * SOLS;
+  Eigen::EigenSolver<Mat10> eigensolver(At);
+  const auto& eigenvectors = eigensolver.eigenvectors();
+  const auto& eigenvalues = eigensolver.eigenvalues();
 
   // Build essential matrices for the real solutions.
   Es->reserve(10);
   for (int s = 0; s < 10; ++s) {
-    Evec.col(s) /= Evec.col(s).norm();
-    bool is_real = true;
-    for (int i = 0; i < 9; ++i) {
-      if (Evec(i,s).imag() != 0) {
-        is_real = false;
-        break;
-      }
+    // Only consider real solutions.
+    if (eigenvalues(s).imag() != 0) {
+      continue;
     }
-    if (is_real) {
-      Mat3 E;
-      for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-          E(i, j) = Evec(3 * i + j, s).real();
-        }
-      }
-      Es->push_back(E);
-    }
+    Mat3 E;
+    Eigen::Map<Vec9 >(E.data()) =
+        E_basis * eigenvectors.col(s).tail<4>().real();
+    Es->emplace_back(E.transpose());
   }
 }
 
 } // namespace openMVG
-

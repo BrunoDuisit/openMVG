@@ -1,3 +1,4 @@
+// This file is part of OpenMVG, an Open Multiple View Geometry C++ library.
 
 // Copyright (c) 2012, 2013 Pierre MOULON.
 
@@ -5,13 +6,17 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#ifndef OPENMVG_ROBUST_ESTIMATION_SIMPLE_RANSAC_H_
-#define OPENMVG_ROBUST_ESTIMATION_SIMPLE_RANSAC_H_
+#ifndef OPENMVG_ROBUST_ESTIMATION_SIMPLE_RANSAC_HPP
+#define OPENMVG_ROBUST_ESTIMATION_SIMPLE_RANSAC_HPP
+
+#include <cassert>
+#include <limits>
+#include <numeric>
+#include <random>
+#include <vector>
 
 #include "openMVG/robust_estimation/rand_sampling.hpp"
 #include "openMVG/robust_estimation/robust_ransac_tools.hpp"
-#include <limits>
-#include <vector>
 
 namespace openMVG {
 namespace robust{
@@ -32,25 +37,24 @@ template<typename Kernel, typename Scorer>
 typename Kernel::Model RANSAC(
   const Kernel &kernel,
   const Scorer &scorer,
-  std::vector<size_t> *best_inliers = NULL,
-  double *best_score = NULL,
+  std::vector<uint32_t> *best_inliers = nullptr ,
+  size_t *best_score = nullptr , // Found number of inliers
   double outliers_probability = 1e-2)
 {
   assert(outliers_probability < 1.0);
   assert(outliers_probability > 0.0);
-  size_t iteration = 0;
-  const size_t min_samples = Kernel::MINIMUM_SAMPLES;
-  const size_t total_samples = kernel.NumSamples();
+  uint32_t iteration = 0;
+  const uint32_t min_samples = Kernel::MINIMUM_SAMPLES;
+  const uint32_t total_samples = kernel.NumSamples();
 
-  size_t max_iterations = 100;
-  const size_t really_max_iterations = 4096;
+  uint32_t max_iterations = 100;
+  const uint32_t really_max_iterations = 4096;
 
-  size_t best_num_inliers = 0;
-  double best_cost = std::numeric_limits<double>::infinity();
+  uint32_t best_num_inliers = 0;
   double best_inlier_ratio = 0.0;
   typename Kernel::Model best_model;
 
-  // Test if we have sufficient points to for the kernel.
+  // Test if we have sufficient points for the kernel.
   if (total_samples < min_samples) {
     if (best_inliers) {
       best_inliers->resize(0);
@@ -59,31 +63,32 @@ typename Kernel::Model RANSAC(
   }
 
   // In this robust estimator, the scorer always works on all the data points
-  // at once. So precompute the list ahead of time.
-  std::vector<size_t> all_samples;
-  for (size_t i = 0; i < total_samples; ++i) {
-    all_samples.push_back(i);
-  }
+  // at once. So precompute the list ahead of time [0,..,total_samples].
+  std::vector<uint32_t> all_samples(total_samples);
+  std::iota(all_samples.begin(), all_samples.end(), 0);
 
-  std::vector<size_t> sample;
+  //--
+  // Random number generation
+  std::mt19937 random_generator(std::mt19937::default_seed);
+
+  std::vector<uint32_t> sample;
   for (iteration = 0;
     iteration < max_iterations &&
     iteration < really_max_iterations; ++iteration) {
-      UniformSample(min_samples, total_samples, &sample);
+      UniformSample(min_samples, random_generator, &all_samples, &sample);
 
       std::vector<typename Kernel::Model> models;
       kernel.Fit(sample, &models);
 
-      // Compute costs for each fit.
-      for (size_t i = 0; i < models.size(); ++i) {
-        std::vector<size_t> inliers;
-        double cost = scorer.Score(kernel, models[i], all_samples, &inliers);
+      // Compute the inlier list for each fit.
+      for (const auto& model_it : models) {
+        std::vector<uint32_t> inliers;
+        scorer.Score(kernel, model_it, all_samples, &inliers);
 
-        if (cost < best_cost) {
-          best_cost = cost;
-          best_inlier_ratio = inliers.size() / double(total_samples);
+        if (best_num_inliers < inliers.size()) {
           best_num_inliers = inliers.size();
-          best_model = models[i];
+          best_inlier_ratio = inliers.size() / double(total_samples);
+          best_model = model_it;
           if (best_inliers) {
             best_inliers->swap(inliers);
           }
@@ -96,11 +101,12 @@ typename Kernel::Model RANSAC(
       }
   }
   if (best_score)
-    *best_score = best_cost;
+    *best_score = best_num_inliers;
   return best_model;
 }
 
 
 } // namespace robust
 } // namespace openMVG
-#endif // OPENMVG_ROBUST_ESTIMATION_SIMPLE_RANSAC_H_
+
+#endif // OPENMVG_ROBUST_ESTIMATION_SIMPLE_RANSAC_HPP

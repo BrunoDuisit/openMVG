@@ -1,6 +1,6 @@
 // Ceres Solver - A fast non-linear least squares minimizer
-// Copyright 2012 Google Inc. All rights reserved.
-// http://code.google.com/p/ceres-solver/
+// Copyright 2015 Google Inc. All rights reserved.
+// http://ceres-solver.org/
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -33,7 +33,7 @@
 
 #include <string>
 #include "ceres/internal/port.h"
-#include "ceres/types.h"
+#include "ceres/linear_solver.h"
 
 namespace ceres {
 namespace internal {
@@ -86,27 +86,27 @@ class TrustRegionStrategy {
   struct PerSolveOptions {
     PerSolveOptions()
         : eta(0),
-          dump_filename_base(""),
           dump_format_type(TEXTFILE) {
     }
 
     // Forcing sequence for inexact solves.
     double eta;
 
+    DumpFormatType dump_format_type;
+
     // If non-empty and dump_format_type is not CONSOLE, the trust
     // regions strategy will write the linear system to file(s) with
     // name starting with dump_filename_base.  If dump_format_type is
     // CONSOLE then dump_filename_base will be ignored and the linear
     // system will be written to the standard error.
-    string dump_filename_base;
-    DumpFormatType dump_format_type;
+    std::string dump_filename_base;
   };
 
   struct Summary {
     Summary()
         : residual_norm(0.0),
           num_iterations(-1),
-          termination_type(FAILURE) {
+          termination_type(LINEAR_SOLVER_FAILURE) {
     }
 
     // If the trust region problem is,

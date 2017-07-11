@@ -1,15 +1,24 @@
+// This file is part of OpenMVG, an Open Multiple View Geometry C++ library.
+
 // Copyright (c) 2012, 2013 Pierre MOULON.
 
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#ifndef OPENMVG_MATCHING_ARRAYMATCHER_KDTREE_FLANN_H_
-#define OPENMVG_MATCHING_ARRAYMATCHER_KDTREE_FLANN_H_
+#ifndef OPENMVG_MATCHING_MATCHER_KDTREE_FLANN_HPP
+#define OPENMVG_MATCHING_MATCHER_KDTREE_FLANN_HPP
+
+#include <memory>
+#include <vector>
+
+#ifdef OPENMVG_USE_OPENMP
+#include <omp.h>
+#endif
 
 #include "openMVG/matching/matching_interface.hpp"
-#include "third_party/flann/src/cpp/flann/flann.hpp"
-#include <memory>
+
+#include <flann/flann.hpp>
 
 namespace openMVG {
 namespace matching  {
@@ -25,14 +34,11 @@ template < typename Scalar = float, typename  Metric = flann::L2<Scalar> >
 class ArrayMatcher_Kdtree_Flann : public ArrayMatcher<Scalar, Metric>
 {
   public:
-  typedef typename Metric::ResultType DistanceType;
+  using DistanceType = typename Metric::ResultType;
 
-  ArrayMatcher_Kdtree_Flann() {}
+  ArrayMatcher_Kdtree_Flann() = default;
 
-  virtual ~ArrayMatcher_Kdtree_Flann()  {
-    _datasetM.reset();
-    _index.reset();
-  }
+  virtual ~ArrayMatcher_Kdtree_Flann() = default;
 
   /**
    * Build the matching structure
@@ -44,19 +50,24 @@ class ArrayMatcher_Kdtree_Flann : public ArrayMatcher<Scalar, Metric>
    *
    * \return True if success.
    */
-  bool Build( const Scalar * dataset, int nbRows, int dimension)  {
-
+  bool Build
+  (
+    const Scalar * dataset,
+    int nbRows,
+    int dimension
+  ) override
+  {
     if (nbRows > 0)
     {
-      _dimension = dimension;
+      dimension_ = dimension;
       //-- Build Flann Matrix container (map to already allocated memory)
-      _datasetM = auto_ptr< flann::Matrix<Scalar> >(
+      datasetM_.reset(
           new flann::Matrix<Scalar>((Scalar*)dataset, nbRows, dimension));
 
       //-- Build FLANN index
-      _index = auto_ptr< flann::Index<Metric> > (
-          new flann::Index<Metric> (*_datasetM, flann::KDTreeIndexParams(4)) );
-      (*_index).buildIndex();
+      index_.reset(
+          new flann::Index<Metric> (*datasetM_, flann::KDTreeIndexParams(4)));
+      index_->buildIndex();
 
       return true;
     }
@@ -73,21 +84,26 @@ class ArrayMatcher_Kdtree_Flann : public ArrayMatcher<Scalar, Metric>
    *
    * \return True if success.
    */
-  bool SearchNeighbour( const Scalar * query, int * indice, DistanceType * distance)
+  bool SearchNeighbour
+  (
+    const Scalar * query,
+    int * indice,
+    DistanceType * distance
+  ) override
   {
-    if (_index.get() != NULL)  {
+    if (index_.get() != nullptr)
+    {
       int * indicePTR = indice;
-      float * distancePTR = distance;
-      flann::Matrix<Scalar> queries((Scalar*)query, 1, _dimension);
+      DistanceType * distancePTR = distance;
+      flann::Matrix<Scalar> queries((Scalar*)query, 1, dimension_);
 
       flann::Matrix<int> indices(indicePTR, 1, 1);
-      flann::Matrix<float> dists(distancePTR, 1, 1);
+      flann::Matrix<DistanceType> dists(distancePTR, 1, 1);
       // do a knn search, using 128 checks
-      (*_index).knnSearch(queries, indices, dists, 1, flann::SearchParams(128));
-
-      return true;
+      return (index_->knnSearch(queries, indices, dists, 1, flann::SearchParams(128)) > 0);
     }
-    else  {
+    else
+    {
       return false;
     }
   }
@@ -96,49 +112,71 @@ class ArrayMatcher_Kdtree_Flann : public ArrayMatcher<Scalar, Metric>
 /**
    * Search the N nearest Neighbor of the scalar array query.
    *
-   * \param[in]   query     The query array
-   * \param[in]   nbQuery   The number of query rows
-   * \param[out]  indice    For each "query" it save the index of the "NN"
-   * nearest entry in the dataset (provided in Build).
-   * \param[out]  distance  The distances between the matched arrays.
-   * \param[out]  NN        The number of maximal neighbor that could
-   *  will be searched.
+   * \param[in]   query           The query array
+   * \param[in]   nbQuery         The number of query rows
+   * \param[out]  indices   The corresponding (query, neighbor) indices
+   * \param[out]  pvec_distances  The distances between the matched arrays.
+   * \param[in]  NN              The number of maximal neighbor that will be searched.
    *
    * \return True if success.
    */
-  bool SearchNeighbours( const Scalar * query, int nbQuery,
-                        vector<int> * pvec_indice,
-                        vector<DistanceType> * pvec_distance,
-                        size_t NN)
+  bool SearchNeighbours
+  (
+    const Scalar * query, int nbQuery,
+    IndMatches * pvec_indices,
+    std::vector<DistanceType> * pvec_distances,
+    size_t NN
+  ) override
   {
-    if (_index.get() != NULL)  {
-      //-- Check if resultIndices is allocated
-      pvec_indice->resize(nbQuery * NN);
-      pvec_distance->resize(nbQuery * NN);
+    if (index_.get() != nullptr && NN <= datasetM_->rows)
+    {
+      std::vector<DistanceType> vec_distances(nbQuery * NN);
+      DistanceType * distancePTR = &(vec_distances[0]);
+      flann::Matrix<DistanceType> dists(distancePTR, nbQuery, NN);
 
-      int * indicePTR = &((*pvec_indice)[0]);
-      float * distancePTR = &(*pvec_distance)[0];
-      flann::Matrix<Scalar> queries((Scalar*)query, nbQuery, _dimension);
+      std::vector<int> vec_indices(nbQuery * NN, -1);
+      flann::Matrix<int> indices(&(vec_indices[0]), nbQuery, NN);
 
-      flann::Matrix<int> indices(indicePTR, nbQuery, NN);
-      flann::Matrix<float> dists(distancePTR, nbQuery, NN);
+      flann::Matrix<Scalar> queries((Scalar*)query, nbQuery, dimension_);
       // do a knn search, using 128 checks
-      (*_index).knnSearch(queries, indices, dists, NN, flann::SearchParams(128));
-      return true;
+      flann::SearchParams params(128);
+#ifdef OPENMVG_USE_OPENMP
+      params.cores = omp_get_max_threads();
+#endif
+      if (index_->knnSearch(queries, indices, dists, NN, params)>0)
+      {
+        // Save the resulting found indices
+        pvec_indices->reserve(nbQuery * NN);
+        pvec_distances->reserve(nbQuery * NN);
+        for (size_t i = 0; i < nbQuery; ++i)
+        {
+          for (size_t j = 0; j < NN; ++j)
+          {
+            pvec_indices->emplace_back(i, vec_indices[i*NN+j]);
+            pvec_distances->emplace_back(vec_distances[i*NN+j]);
+          }
+        }
+        return true;
+      }
+      else
+      {
+        return false;
+      }
     }
-    else  {
+    else
+    {
       return false;
     }
   }
 
-  private :
+  private:
 
-  auto_ptr< flann::Matrix<Scalar> > _datasetM;
-  auto_ptr< flann::Index<Metric> > _index;
-  size_t _dimension;
+  std::unique_ptr< flann::Matrix<Scalar> > datasetM_;
+  std::unique_ptr< flann::Index<Metric> > index_;
+  std::size_t dimension_;
 };
 
 } // namespace matching
 } // namespace openMVG
 
-#endif // OPENMVG_MATCHING_ARRAYMATCHER_KDTREE_FLANN_H_
+#endif // OPENMVG_MATCHING_MATCHER_KDTREE_FLANN_HPP

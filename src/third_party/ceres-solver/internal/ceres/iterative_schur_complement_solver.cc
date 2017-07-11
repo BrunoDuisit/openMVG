@@ -1,6 +1,6 @@
 // Ceres Solver - A fast non-linear least squares minimizer
-// Copyright 2010, 2011, 2012 Google Inc. All rights reserved.
-// http://code.google.com/p/ceres-solver/
+// Copyright 2015 Google Inc. All rights reserved.
+// http://ceres-solver.org/
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -88,7 +88,7 @@ LinearSolver::Summary IterativeSchurComplementSolver::SolveImpl(
     VLOG(2) << "No parameter blocks left in the schur complement.";
     LinearSolver::Summary cg_summary;
     cg_summary.num_iterations = 0;
-    cg_summary.termination_type = TOLERANCE;
+    cg_summary.termination_type = LINEAR_SOLVER_SUCCESS;
     schur_complement_->BackSubstitute(NULL, x);
     return cg_summary;
   }
@@ -101,6 +101,7 @@ LinearSolver::Summary IterativeSchurComplementSolver::SolveImpl(
   // complement matrix with the block diagonal of the matrix F'F as
   // the preconditioner.
   LinearSolver::Options cg_options;
+  cg_options.min_num_iterations = options_.min_num_iterations;
   cg_options.max_num_iterations = options_.max_num_iterations;
   ConjugateGradientsSolver cg_solver(cg_options);
   LinearSolver::PerSolveOptions cg_per_solve_options;
@@ -153,26 +154,26 @@ LinearSolver::Summary IterativeSchurComplementSolver::SolveImpl(
         preconditioner_->Update(*A, per_solve_options.D);
     cg_per_solve_options.preconditioner = preconditioner_.get();
   }
-
   event_logger.AddEvent("Setup");
 
   LinearSolver::Summary cg_summary;
   cg_summary.num_iterations = 0;
-  cg_summary.termination_type = FAILURE;
+  cg_summary.termination_type = LINEAR_SOLVER_FAILURE;
 
+  // TODO(sameeragarwal): Refactor preconditioners to return a more
+  // sane message.
+  cg_summary.message = "Preconditioner update failed.";
   if (preconditioner_update_was_successful) {
     cg_summary = cg_solver.Solve(schur_complement_.get(),
                                  schur_complement_->rhs().data(),
                                  cg_per_solve_options,
                                  reduced_linear_system_solution_.data());
-    if (cg_summary.termination_type != FAILURE) {
+    if (cg_summary.termination_type != LINEAR_SOLVER_FAILURE &&
+        cg_summary.termination_type != LINEAR_SOLVER_FATAL_ERROR) {
       schur_complement_->BackSubstitute(
           reduced_linear_system_solution_.data(), x);
     }
   }
-
-  VLOG(2) << "CG Iterations : " << cg_summary.num_iterations;
-
   event_logger.AddEvent("Solve");
   return cg_summary;
 }

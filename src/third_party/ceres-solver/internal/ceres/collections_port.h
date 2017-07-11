@@ -1,6 +1,6 @@
 // Ceres Solver - A fast non-linear least squares minimizer
-// Copyright 2010, 2011, 2012 Google Inc. All rights reserved.
-// http://code.google.com/p/ceres-solver/
+// Copyright 2015 Google Inc. All rights reserved.
+// http://ceres-solver.org/
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -33,6 +33,8 @@
 #ifndef CERES_INTERNAL_COLLECTIONS_PORT_H_
 #define CERES_INTERNAL_COLLECTIONS_PORT_H_
 
+#include "ceres/internal/port.h"
+
 #if defined(CERES_NO_UNORDERED_MAP)
 #  include <map>
 #  include <set>
@@ -52,13 +54,21 @@
 #  define CERES_HASH_NAMESPACE_END }
 #endif
 
-#if !defined(CERES_NO_UNORDERED_MAP) && !defined(CERES_TR1_UNORDERED_MAP) && !defined(CERES_STD_UNORDERED_MAP)
-#error One of: CERES_NO_UNORDERED_MAP, CERES_TR1_UNORDERED_MAP, CERES_STD_UNORDERED_MAP must be defined!
+#if defined(CERES_STD_UNORDERED_MAP_IN_TR1_NAMESPACE)
+#  include <unordered_map>
+#  include <unordered_set>
+#  define CERES_HASH_NAMESPACE_START namespace std { namespace tr1 {
+#  define CERES_HASH_NAMESPACE_END } }
+#endif
+
+#if !defined(CERES_NO_UNORDERED_MAP) && !defined(CERES_TR1_UNORDERED_MAP) && \
+    !defined(CERES_STD_UNORDERED_MAP) && !defined(CERES_STD_UNORDERED_MAP_IN_TR1_NAMESPACE)  // NOLINT
+#  error One of: CERES_NO_UNORDERED_MAP, CERES_TR1_UNORDERED_MAP,\
+ CERES_STD_UNORDERED_MAP, CERES_STD_UNORDERED_MAP_IN_TR1_NAMESPACE must be defined!  // NOLINT
 #endif
 
 #include <utility>
 #include "ceres/integral_types.h"
-#include "ceres/internal/port.h"
 
 // Some systems don't have access to unordered_map/unordered_set. In
 // that case, substitute the hash map/set with normal map/set. The
@@ -82,7 +92,8 @@ struct HashSet : set<K> {};
 namespace ceres {
 namespace internal {
 
-#if defined(CERES_TR1_UNORDERED_MAP)
+#if defined(CERES_TR1_UNORDERED_MAP) || \
+    defined(CERES_STD_UNORDERED_MAP_IN_TR1_NAMESPACE)
 template<typename K, typename V>
 struct HashMap : std::tr1::unordered_map<K, V> {};
 template<typename K>

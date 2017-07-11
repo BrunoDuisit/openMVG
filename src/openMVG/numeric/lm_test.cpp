@@ -1,3 +1,4 @@
+// This file is part of OpenMVG, an Open Multiple View Geometry C++ library.
 
 // Copyright (c) 2012, 2013 Pierre MOULON.
 
@@ -5,20 +6,24 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#include <iostream>
-#include <fstream>
-#include <string>
 #include "openMVG/numeric/numeric.h"
 #include "openMVG/numeric/lm.hpp"
-#include "testing/testing.h"
 
+#include "testing/testing.h"
 #include "third_party/vectorGraphics/svgDrawer.hpp"
+
+#include <unsupported/Eigen/NonLinearOptimization>
+#include <unsupported/Eigen/NumericalDiff>
+
+#include <fstream>
+#include <iostream>
+#include <string>
 
 using namespace openMVG;
 using namespace svg;
 using namespace std;
 
-// Implementation of the prolem found here :
+// Implementation of the problem found here:
 // digilander.libero.it/foxes/optimiz/Optimiz1.htm
 
 // Eigen LM functor to compute a mono-dimensional exponential regression
@@ -59,7 +64,7 @@ TEST(LM, MimimaSearchViaLM) {
     x.rows(),  // cardinal of computed residual
     x, y // Data that allow to compute the residual
   );
-  typedef Eigen::NumericalDiff<lm_Refine_functor> NumDiffT;
+  using NumDiffT = Eigen::NumericalDiff<lm_Refine_functor>;
   NumDiffT numDiff(functor);
 
   Eigen::LevenbergMarquardt<NumDiffT > lm(numDiff);

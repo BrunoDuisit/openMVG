@@ -1,3 +1,4 @@
+// This file is part of OpenMVG, an Open Multiple View Geometry C++ library.
 
 // Copyright (c) 2012, 2013 Pierre MOULON.
 
@@ -8,67 +9,48 @@
 #ifndef OPENMVG_FEATURES_FEATURE_HPP
 #define OPENMVG_FEATURES_FEATURE_HPP
 
-#include "openMVG/numeric/numeric.h"
+#include <algorithm>
 #include <iostream>
 #include <iterator>
 #include <fstream>
 #include <string>
 #include <vector>
 
+#include "openMVG/numeric/eigen_alias_definition.hpp"
+
 namespace openMVG {
-
-/**
- * Abstract base class for features.
- */
-class FeatureBase {
-public:
-  virtual inline ~FeatureBase() {};
-
-  //this pure virtual method will be called to print the derived class' object.
-  virtual std::ostream& print(std::ostream& output) const = 0;
-
-  //this pure virtual method will be called to read the derived class' object.
-  virtual std::istream& read(std::istream& input) = 0;
-};
-
-//with overloaded operators:
-inline std::ostream& operator<<(std::ostream& out, const FeatureBase& obj)
-{
-  return obj.print(out); //simply call the print method.
-}
-
-inline std::istream& operator>>(std::istream& in, FeatureBase& obj)
-{
-  return obj.read(in); //simply call the read method.
-}
+namespace features {
 
 /**
  * Base class for Point features.
- * Store position of the feature point.
+ * Store position of a feature point.
  */
-class PointFeature : public FeatureBase {
+class PointFeature {
+
+  friend std::ostream& operator<<(std::ostream& out, const PointFeature& obj);
+  friend std::istream& operator>>(std::istream& in, PointFeature& obj);
+
 public:
-  virtual inline ~PointFeature() {};
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  inline PointFeature(float x=0.0f, float y=0.0f)
-   : _coords(x, y) {}
+  PointFeature(float x=0.0f, float y=0.0f);
 
-  inline float x() const { return _coords(0); }
-  inline float y() const { return _coords(1); }
-  inline Vec2f coords() const { return _coords;}
+  float x() const;
+  float y() const;
+  const Vec2f & coords() const;
 
-  inline float& x() { return _coords(0); }
-  inline float& y() { return _coords(1); }
-  inline Vec2f& coords() { return _coords;}
+  float& x();
+  float& y();
+  Vec2f& coords();
 
-  virtual inline std::ostream& print(std::ostream& os) const
-  { return os << _coords(0) << " " << _coords(1); }
-
-  virtual inline std::istream& read(std::istream& in)
-  { return in >> _coords(0) >> _coords(1); }
+  template<class Archive>
+  void serialize(Archive & ar)
+  {
+    ar (coords_(0), coords_(1));
+  }
 
 protected:
-  Vec2f _coords;  // (x, y).
+  Vec2f coords_;  // (x, y).
 };
 
 /**
@@ -76,39 +58,89 @@ protected:
  * Add scale and orientation description to basis PointFeature.
  */
 class SIOPointFeature : public PointFeature {
+
+  friend std::ostream& operator<<(std::ostream& out, const SIOPointFeature& obj);
+  friend std::istream& operator>>(std::istream& in, SIOPointFeature& obj);
+
 public:
-  virtual ~SIOPointFeature() {};
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+  ~SIOPointFeature() = default;
 
   SIOPointFeature(float x=0.0f, float y=0.0f,
-                  float scale=0.0f, float orient=0.0f)
-    : PointFeature(x,y)
-    , _scale(scale)
-    , _orientation(orient) {}
+                  float scale=0.0f, float orient=0.0f);
 
-  inline float scale() const { return _scale; }
-  inline float& scale() { return _scale; }
-  inline float orientation() const { return _orientation; }
-  inline float& orientation() { return _orientation; }
+  float scale() const;
+  float& scale();
+  float orientation() const;
+  float& orientation();
 
-  bool operator ==(const SIOPointFeature& b) const {
-    return (_scale == b.scale()) &&
-           (_orientation == b.orientation()) &&
-           (x() == b.x()) && (y() == b.y()) ;
-  };
+  bool operator ==(const SIOPointFeature& b) const;
 
-  virtual std::ostream& print(std::ostream& os) const
+  bool operator !=(const SIOPointFeature& b) const;
+
+  template<class Archive>
+  void serialize(Archive & ar)
   {
-    return PointFeature::print(os) << " " << _scale << " " << _orientation;
-  }
-
-  virtual std::istream& read(std::istream& in)
-  {
-    return PointFeature::read(in) >> _scale >> _orientation;
+    ar (
+      coords_(0), coords_(1),
+      scale_,
+      orientation_);
   }
 
 protected:
-  float _scale;        // In pixels.
-  float _orientation;  // In radians.
+  float scale_;        // In pixels.
+  float orientation_;  // In radians.
+};
+
+/// Return the coterminal angle between [0;2*PI].
+/// Angle value must be in Radian.
+float getCoterminalAngle(float angle);
+
+/**
+* Base class for Affine "Point" features.
+* Add major & minor ellipse axis & orientation to the basis PointFeature.
+*/
+class AffinePointFeature : public PointFeature {
+
+  friend std::ostream& operator<<(std::ostream& out, const AffinePointFeature& obj);
+  friend std::istream& operator>>(std::istream& in, AffinePointFeature& obj);
+
+public:
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+  virtual ~AffinePointFeature() = default;
+
+  AffinePointFeature
+  (
+    float x = 0.0f,
+    float y = 0.0f,
+    float a = 0.0f,
+    float b = 0.0f,
+    float c = 0.0f
+  );
+  float l1() const;
+  float l2() const;
+  float orientation() const;
+
+  bool operator ==(const AffinePointFeature& b) const;
+
+  bool operator !=(const AffinePointFeature& rhs) const;
+
+  template<class Archive>
+  void serialize(Archive & ar)
+  {
+    ar (
+      coords_(0), coords_(1),
+      l1_, l2_, phi_, a_, b_, c_);
+  }
+
+  float a() const;
+  float b() const;
+  float c() const;
+
+protected:
+  float l1_, l2_, phi_, a_, b_, c_;
 };
 
 /// Read feats from file
@@ -118,14 +150,17 @@ static bool loadFeatsFromFile(
   FeaturesT & vec_feat)
 {
   vec_feat.clear();
-  bool bOk = false;
 
   std::ifstream fileIn(sfileNameFeats.c_str());
+  if (!fileIn.is_open())
+  {
+    return false;
+  }
   std::copy(
     std::istream_iterator<typename FeaturesT::value_type >(fileIn),
     std::istream_iterator<typename FeaturesT::value_type >(),
     std::back_inserter(vec_feat));
-  bOk = !fileIn.bad();
+  const bool bOk = !fileIn.bad();
   fileIn.close();
   return bOk;
 }
@@ -137,33 +172,34 @@ static bool saveFeatsToFile(
   FeaturesT & vec_feat)
 {
   std::ofstream file(sfileNameFeats.c_str());
+  if (!file.is_open())
+    return false;
   std::copy(vec_feat.begin(), vec_feat.end(),
             std::ostream_iterator<typename FeaturesT::value_type >(file,"\n"));
-  bool bOk = file.good();
+  const bool bOk = file.good();
   file.close();
   return bOk;
 }
 
 /// Export point feature based vector to a matrix [(x,y)'T, (x,y)'T]
-template< typename FeaturesT, typename MatT >
+template< typename FeaturesT>
 void PointsToMat(
   const FeaturesT & vec_feats,
-  MatT & m)
+  Mat& m)
 {
   m.resize(2, vec_feats.size());
-  typedef typename FeaturesT::value_type ValueT; // Container type
-  typedef typename MatT::Scalar Scalar; // Output matrix type
+  using ValueT = typename FeaturesT::value_type; // Container type
 
   size_t i = 0;
-  for( typename FeaturesT::const_iterator iter = vec_feats.begin();
+  for (typename FeaturesT::const_iterator iter = vec_feats.begin();
     iter != vec_feats.end(); ++iter, ++i)
   {
     const ValueT & feat = *iter;
-    m.col(i)(0) = Scalar(feat.x());
-    m.col(i)(1) = Scalar(feat.y());
+    m.col(i) << feat.x(), feat.y();
   }
 }
 
+} // namespace features
 } // namespace openMVG
 
 #endif // OPENMVG_FEATURES_FEATURE_HPP

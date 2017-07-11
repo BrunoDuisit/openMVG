@@ -152,8 +152,8 @@ public:
     svgStream << "<polyline points=\"";
 
     DataInputIteratorY itery = yStart;
-    for(DataInputIteratorX iterx = xStart;
-     iterx != xEnd; std::advance(iterx, 1), std::advance(itery, 1))
+    for (DataInputIteratorX iterx = xStart;
+        iterx != xEnd; std::advance(iterx, 1), std::advance(itery, 1))
     {
       svgStream << *iterx << ',' << *itery << ' ';
     }
@@ -209,8 +209,8 @@ struct svgHisto
       iter != vec_value.end();
       ++iter)
     {
-      int dist = std::distance(vec_value.begin(), iter);
-      T val = *iter;
+      const size_t dist = std::distance(vec_value.begin(), iter);
+      const T val = *iter;
       std::ostringstream os;
       os << '(' << range.first + dist/float(n) * (range.second-range.first) << ',' << val << ')';
       svgStyle style = svgStyle().fill("blue").stroke("black", 1.0).tooltip(os.str());
@@ -228,7 +228,7 @@ struct svgHisto
     svgStyle styleAxis = svgStyle().stroke("black", 1.0f);
     // Draw X Axis
     svgStream.drawText(.05f*W, 1.2f*H, .1f*H, stringifier(range.first), "black");
-    svgStream.drawText(   W, 1.2*H, .1f*H, stringifier(range.second), "black");
+    svgStream.drawText(   W, 1.2f*H, .1f*H, stringifier(range.second), "black");
     svgStream.drawLine(0, 1.1f*H, W, 1.1f*H, styleAxis);
     // Draw Y Axis
     svgStream.drawText(1.2f*W, .1f*H, .1f*H, stringifier(maxi), "black");

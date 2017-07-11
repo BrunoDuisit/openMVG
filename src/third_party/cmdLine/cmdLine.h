@@ -2,8 +2,8 @@
  * @file cmdLine.h
  * @brief Command line option parsing
  * @author Pascal Monasse
- * 
- * Copyright (c) 2012-2013 Pascal Monasse
+ *
+ * Copyright (c) 2012-2014 Pascal Monasse
  * All rights reserved.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -30,6 +30,10 @@
 #include <sstream>
 #include <cassert>
 
+#ifdef _WIN32
+#pragma warning(disable:4290) // exception specification ignored...
+#endif
+
 /// Base class for option/switch
 class Option {
 public:
@@ -40,7 +44,7 @@ public:
     /// Constructor with short name/long name
     Option(char d, std::string name)
     : c(d), used(false), longName(name) {}
-    virtual ~Option() {}
+    virtual ~Option() = default;
     virtual bool check(int& argc, char* argv[])=0; ///< Option found at argv[0]?
     virtual Option* clone() const=0; ///< Copy
 };
@@ -52,7 +56,7 @@ public:
     OptionSwitch(char c, std::string name="")
     : Option(c,name) {}
     /// Find switch in argv[0]
-    bool check(int& argc, char* argv[]) {
+    bool check(int& argc, char* argv[]) override {
         if(std::string("-")+c==argv[0] ||
            (!longName.empty() && std::string("--")+longName==argv[0])) {
             used = true;
@@ -68,12 +72,12 @@ public:
         return false;
     }
     /// Copy
-    Option* clone() const {
+    Option* clone() const override {
         return new OptionSwitch(c, longName);
     }
 };
 
-/// Option with an argument of type T. The type must be readable by operator>>
+/// Option with an argument of type T, which must be readable by operator>>
 template <class T>
 class OptionField : public Option {
 public:
@@ -82,7 +86,7 @@ public:
     : Option(c,name), _field(field) {}
     /// Find option in argv[0] and argument in argv[1]. Throw an exception
     /// (type std::string) if the argument cannot be read.
-    bool check(int& argc, char* argv[]) {
+    bool check(int& argc, char* argv[]) override {
         std::string param; int arg=0;
         if(std::string("-")+c==argv[0] ||
            (!longName.empty() && std::string("--")+longName==argv[0])) {
@@ -108,12 +112,13 @@ public:
         }
         return false;
     }
+    /// Decode the string as template type T
     bool read_param(const std::string& param) {
-        std::stringstream str(param);
-        return !((str >> _field).fail() || !str.eof());
+        std::stringstream str(param); char unused;
+        return !((str >> _field).fail() || !(str>>unused).fail());
     }
     /// Copy
-    Option* clone() const {
+    Option* clone() const override {
         return new OptionField<T>(c, _field, longName);
     }
 private:
@@ -121,7 +126,7 @@ private:
 };
 
 /// Template specialization to be able to take parameter including space.
-/// Generic method would do >>_field (stops at space) and test eof (false).
+/// Generic method would do >>_field (stops at space) and signal unused chars.
 template <>
 inline bool OptionField<std::string>::read_param(const std::string& param) {
     _field = param;
@@ -174,7 +179,7 @@ public:
                     break;
                 }
             }
-            if(! found) { // A single dash and a negative number are not options
+            if(! found) { // A negative number is not an option
                 if(std::string(argv[i]).size()>1 && argv[i][0] == '-') {
                     std::istringstream str(argv[i]);
                     float v;

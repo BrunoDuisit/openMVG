@@ -1,35 +1,30 @@
-FILE(
-	GLOB
-	linearProgramming_headers
-	*.hpp
+
+add_library(openMVG_linearProgramming
+  bisectionLP.hpp
+  linearProgrammingInterface.hpp
+  linearProgrammingOSI_X.cpp
+  linearProgrammingOSI_X.hpp
+  linearProgramming.hpp)
+
+set_property(TARGET openMVG_linearProgramming PROPERTY FOLDER OpenMVG/OpenMVG)
+install(TARGETS openMVG_linearProgramming DESTINATION lib EXPORT openMVG-targets)
+set_target_properties(openMVG_linearProgramming PROPERTIES SOVERSION ${OPENMVG_VERSION_MAJOR} VERSION "${OPENMVG_VERSION_MAJOR}.${OPENMVG_VERSION_MINOR}")
+
+target_link_libraries(openMVG_linearProgramming
+  PRIVATE
+    ${CLP_LIBRARIES}     # clp + solver wrapper
+    ${COINUTILS_LIBRARY} # container tools
+    ${OSI_LIBRARY}       # generic LP
 )
-FILE(
-	GLOB
-	linearProgramming_cpp
-	*.cpp
+
+target_include_directories(openMVG_linearProgramming
+  PRIVATE
+    ${CLP_INCLUDE_DIRS}
+    ${COINUTILS_INCLUDE_DIRS}
+    ${OSI_INCLUDE_DIRS}
 )
-FILE(GLOB_RECURSE REMOVEFILESUNITTEST *_test.cpp)
 
-SET_SOURCE_FILES_PROPERTIES(${linearProgramming_headers} PROPERTIES LANGUAGE CXX)
+set(UNIT_TEST_LIBS openMVG_linearProgramming)
+UNIT_TEST(openMVG linearProgramming "${UNIT_TEST_LIBS}")
 
-#Remove the future main files
-LIST(REMOVE_ITEM linearProgramming_cpp ${REMOVEFILESUNITTEST})
-
-ADD_LIBRARY(openMVG_linearProgramming ${linearProgramming_headers} ${linearProgramming_cpp})
-TARGET_LINK_LIBRARIES(openMVG_linearProgramming
-    lib_OsiClpSolver # solver wrapper
-    lib_CoinUtils # container tools
-    lib_Osi # generic LP
-    lib_clp # Solver
-)
-IF (MOSEK_FOUND)
-  TARGET_LINK_LIBRARIES(openMVG_linearProgramming
-    pthread
-    ${MOSEK_LIB}
-    lib_Osi_Msk # OSI solver wrapper for the Mosek backend
-  )
-ENDIF (MOSEK_FOUND)
-
-UNIT_TEST(openMVG_linearProgramming linearProgramming "openMVG_linearProgramming")
-
-ADD_SUBDIRECTORY(lInfinityCV)
+add_subdirectory(lInfinityCV)
